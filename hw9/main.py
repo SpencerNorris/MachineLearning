@@ -17,6 +17,7 @@ import sys
 lamb = None
 cross_val = False
 
+
 def __linear_regression_weights(X, y, lamb):
 	'''
 	Analytically computes the weights for linear regression with regularization.
@@ -31,9 +32,26 @@ def __linear_regression_weights(X, y, lamb):
 
 
 	#Use inverse to find analytical solution for weights
-	inverse = np.linalg.inv(__multiply_matrices(X.T, X) + lamb * np.identity(len(X.T)))
-	pseudo = __multiply_matrices(inverse, X.T)
-	return __multiply_matrices(pseudo, y)
+	inverse = np.linalg.inv(np.matmul(X.T, X) + lamb * np.identity(len(X.T)))
+	pseudo = np.matmul(inverse, X.T)
+	return np.matmul(pseudo, y)
+
+
+def __get_cv_err(lamb, X, Y):
+	def __multiply_matrices(A, B):
+		'''
+		Returns the results of performing matrix multiplication
+		on two numpy arrays A and B.
+		'''
+		return np.array([[np.dot(a,b) for b in B.T] for a in A])
+
+	inverse = np.linalg.inv(np.matmul(X.T, X) + lamb * np.identity(len(X.T)))
+	pseudo = np.matmul(np.matmul(X, inverse), X.T)
+	predictions = np.matmul(pseudo,Y)
+	total = 0.0
+	for i in range(len(predictions)):
+		total += ( (predictions[i] - Y.T[i]) / (1 - pseudo[i][i]) )**2
+	return total / len(predictions)
 
 
 def __build_polynomial_transformed_matrix(D):
@@ -78,6 +96,8 @@ def __get_symmetry_score(x):
 	'''
 	Takes the sums of the squared errors between the pixel values
 	flipped along the X axis and Y axis and mapped onto the other side.
+	Since it increases with the difference when mirrored across the X axis,
+	a better term might be the 'anti-symmetry'
 	'''
 
 	#Reshape data into matrix
@@ -108,6 +128,7 @@ def __get_avg_intensity(x):
 def main():
 	global lamb
 	global cross_val
+	weights = None
 
 	#Read in data sets, extract x and y
 	training = np.genfromtxt('ZipDigits.train.txt')
@@ -134,6 +155,7 @@ def main():
 
 	#Get the polynomial transformed Z matrix for training, append Y
 	Z = __build_polynomial_transformed_matrix(D[:, 1:])
+	print("Transformed Z matrix shape: ", Z.shape)
 	Z = np.concatenate(([[y] for y in D[:,0]], Z), axis=1)
 
 	#Partition Z into training and test sets
@@ -142,17 +164,56 @@ def main():
 
 	#Perform cross-validation?
 	if cross_val:
-		pass
-		# weights = None
-		# lambs = [i for i in range(0,2,.01)]
+		best_weights = None
+		best_err = float('inf')
+		best_lamb = None
 
-		# #iterate over lambda selections, test
+		#iterate over lambda selections, test
+		cross_val_errors = [] # record errors for lambdas
+		test_errors = []
+		for test_lamb in np.arange(0.0, 2.0, .01):
 
-		# #Classify test points
-		# test_predictions = []
-		# for point in test[:,1:]:
-		# 	test_predictions.append(np.dot(weights, point))
-		# test_predictions = np.sign(np.array(test_predictions))
+			#Get total crossval error for lambda
+			cv_err = __get_cv_err(test_lamb, Z[:,1:], Z[:,0])
+			cross_val_errors.append(cv_err)
+
+			#Get test error
+			test_weights = __linear_regression_weights(
+					training[:,1:],
+					np.array([[y] for y in training[:,0]]),
+					test_lamb
+				).T[0]
+			test_predictions = []
+			for point in test[:,1:]:
+				test_predictions.append(np.dot(test_weights, point))
+			test_predictions = np.sign(np.array(test_predictions))
+			test_err = float(len(
+				[
+					test_predictions[i] 
+					for i in range(len(test_predictions))
+					if not test_predictions[i] == test[i][0]
+				]
+			)) / float(len(test_predictions))
+			test_errors.append(test_err)
+
+			#Update optimal crossval error, lamb
+			if cross_val_errors[len(cross_val_errors) - 1] < best_err:
+				best_err = cross_val_errors[len(cross_val_errors) - 1]
+				best_lamb = test_lamb
+
+		print("Cross-validation error: ", best_err)
+		print("Optimal lambda: ", best_lamb)
+		weights = __linear_regression_weights(
+					training[:,1:],
+					np.array([[y] for y in training[:,0]]),
+					best_lamb
+				).T[0]
+
+		#Plot crossval, test errors against lambda
+		plt.plot(np.arange(0.0, 2.0, .01), cross_val_errors, color='b')
+		plt.plot(np.arange(0.0, 2.0, .01), test_errors, color='r')
+		plt.show()
+		plt.close()
 
 
 	else:
@@ -163,12 +224,22 @@ def main():
 					lamb if lamb is not None else 0
 				).T[0]
 
-		#Classify test points
-		test_predictions = []
-		for point in test[:,1:]:
-			test_predictions.append(np.dot(weights, point))
-		test_predictions = np.sign(np.array(test_predictions))
 
+	#Classify test points
+	test_predictions = []
+	for point in test[:,1:]:
+		test_predictions.append(np.dot(weights, point))
+	test_predictions = np.sign(np.array(test_predictions))
+
+	#Get test error
+	test_err = float(len(
+		[
+			test_predictions[i] 
+			for i in range(len(test_predictions))
+			if not test_predictions[i] == test[i][0]
+		]
+	)) / float(len(test_predictions))
+	print("Test Error: ", test_err)
 
 	#Separate test points into +1s, -1s
 	ones = np.array([ 
@@ -183,9 +254,13 @@ def main():
 	])
 
 	#Plot points using original 2-D coordinates
-	plt.scatter(ones[:,0], ones[:,1], color='b', alpha=.2)
-	plt.scatter(not_ones[:,0], not_ones[:,1], color='r', alpha=.2)
+	fig, ax = plt.subplots()
+	ax.scatter(ones[:,0], ones[:,1], color='b', alpha=.2)
+	ax.scatter(not_ones[:,0], not_ones[:,1], color='r', alpha=.2)
+	ax.set_xlabel("Anti-Symmetry")
+	ax.set_ylabel("Avg. Intensity")
 	plt.show()
+	plt.close()
 
 	return 0
 
