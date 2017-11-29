@@ -2,7 +2,23 @@
 '''
 Author: Spencer Norris
 File: main.py
-Description: 
+Description:
+
+Implementation of RBF neural network,
+K-nearest neighbors and linear regression with
+an 8th-degree Legendre feature transform, all with cross-validation.
+
+To observe the in-sample, cross-validation and out-of-sample errors
+for a particular model, run the following:
+
+main.py [--rbf | --linear | --knn]
+
+This will plot the cross-validation error in terms of the
+free hyperparameter, as well as the decision boundary found
+by training the model with the optimal selection
+of that hyperparameter.
+
+You can run main.py with all three of the listed flags to run all models.
 '''
 
 from sklearn.neighbors import KNeighborsClassifier
