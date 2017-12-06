@@ -18,76 +18,38 @@ import sys
 
 
 def sigmoid(x):
+	x = float(x)
 	if x == 0:
 		return .5
-	x = np.clip(-1000,1000,x)
-	return 1 / (1 + math.exp(-x))
+	return 1.0 / (1.0 + math.exp(-x))
 
 def linear(x):
 	return x
 
 class NeuralNet():
-	def __init__(self, learning_rate=.0001, 
+	def __init__(self,
+				 size_in=2,
+				 size_hidden=2, 
+				 learning_rate=.01,
+				 num_epochs=1,
 				 activation_fn=sigmoid,
 				 output_fn = np.tanh,
 				 update_method='backprop'):
 
+		self.num_epochs = num_epochs
 		self.learning_rate = learning_rate
 		self.activation_fn = activation_fn
 		self.output_fn = output_fn
 		self.update_method = update_method
+		self.size_in = size_in
+		self.size_hidden = size_hidden
 
 		#Input-to-hidden weights (Include extra weight for the bias terms)
-		self.input_hidden_weights = np.array([[.25 for j in range(2)] for i in range(3)])
-		self.hidden_output_weights = np.array([[.25 for j in range(1)] for i in range(3)])
+		self.input_hidden_weights = np.array([[.25 for j in range(size_hidden)] for i in range(size_in + 1)])
+		self.hidden_output_weights = np.array([[.25 for j in range(1)] for i in range(size_hidden + 1)])
 
 
-	def __backprop(self, xin, results, true_vals, node_signals, node_outputs):
-		'''
-		Update weights in network according to error produced during training.
-		'''
-		updated_input_hidden_weights = copy(self.input_hidden_weights)
-		updated_hidden_output_weights = copy(self.hidden_output_weights)
-
-		#Calculate E_total
-		E_total = .25 * sum([(results[i] - true_vals[i])**2 for i in range(len(results))])
-		if E_total == 0.0:
-			return
-
-
-		#Update hidden-to-output weights
-		gradient = []
-		gradient.append([])
-		gradient.append([])
-
-		N = len(results)
-		dE_total_over_dOut = -(1.0 / (2.0 * N)) * sum([true_vals[i] - results[i] for i in range(len(results))])
-		if self.output_fn is np.tanh:
-			dOut_over_dNet = 1 - np.tanh(node_signals[2])**2
-		else:
-			dOut_over_dNet = 1
-		for i in range(len(self.hidden_output_weights)):
-			dE_total_over_dw = dE_total_over_dOut * dOut_over_dNet * node_outputs[1][i]
-			gradient[1].append(dE_total_over_dw)
-			updated_hidden_output_weights[i][0] = self.hidden_output_weights[i][0] - self.learning_rate * dE_total_over_dw
-
-		#Update input-to-hidden weights using hidden deltas
-		xin = np.append([1], xin)
-		for i in range(len(self.input_hidden_weights)):
-			for j in range(len(self.input_hidden_weights[i])):
-				dE_total_over_dOut_hidden = dE_total_over_dOut * self.hidden_output_weights.T[0][j]
-				dOut_over_dNet_hidden = node_outputs[1].T[0][j] * (1 - node_signals[1].T[0][j])
-				dE_total_over_dw = dE_total_over_dOut_hidden * dOut_over_dNet_hidden * xin[i]
-				gradient[0].append(dE_total_over_dw)
-				updated_input_hidden_weights[i][j] = self.input_hidden_weights[i][j] - self.learning_rate * dE_total_over_dw
-
-
-		self.input_hidden_weights = updated_input_hidden_weights
-		self.hidden_output_weights = updated_hidden_output_weights
-		print(gradient)
-
-
-	def __peturb():
+	def __perturb():
 		'''
 		
 		'''
@@ -131,25 +93,72 @@ class NeuralNet():
 		Wrapper function for training the network
 		using the feedforward function with backpropogation.
 		'''
-		#Randomly select a holdout point to use for backprop
-		index = np.random.randint(low=0, high=len(X))
-		results = []
-		holdout_signals = None
-		holdout_outputs = None
-		for i in range(len(X)):
-			res, node_signals, node_outputs = self.__feedforward(X[i], True)
-			if i == index:
-				holdout_signals = node_signals
-				holdout_outputs = node_outputs
-			results.append(res)
-
-		print("feedforward result: ", results)
-
-		#Perform backpropogation with full gradient descent
-		if self.update_method == 'backprop':
-			self.__backprop(X[index], results, Y, holdout_signals, holdout_outputs)
-		else:
+		#Check if we're just using numerical perturbations
+		if not self.update_method == 'backprop':
 			self.__perturb()
+			return
+
+
+		#Otherwise we're going to use backpropogation with batch gradient descent
+		for epoch in range(self.num_epochs):
+			results = []
+			for x in X:
+				res, node_signals, node_outputs = self.__feedforward(x, True)
+				results.append(res)
+
+			#Calculate E_total
+			E_total = .25 * (1.0 / float(len(results))) * sum([(results[i] - Y[i])**2 for i in range(len(results))])
+			if E_total == 0.0:
+				return
+
+			updated_input_hidden_weights = copy(self.input_hidden_weights)
+			updated_hidden_output_weights = copy(self.hidden_output_weights)
+
+			gradient = []
+			gradient.append(np.array([[0.0 for j in range(self.size_hidden)] for i in range(self.size_in + 1)]))
+			gradient.append(np.array([[0.0 for j in range(1)] for i in range(self.size_hidden + 1)]))
+			deltas = copy(gradient)
+
+			for i in range(len(X)):
+				#Feedforward
+				x = X[i]
+				res, node_signals, node_outputs = self.__feedforward(x, True)
+
+				#Get deltas for example
+				__output_deltas = np.array([0.0 for i in range(1)])
+				__hidden_deltas = np.array([0.0 for i in range(self.size_hidden)])
+
+				#Deltas for output
+				if self.output_fn is np.tanh:
+					output_derivative = lambda x: 1 - node_outputs[2]**2
+				else:
+					output_derivative = lambda x: 1
+				sig_derivative = lambda x: sigmoid(x) * (1 - sigmoid(x))
+				__output_deltas = 2 * (node_outputs[2] - Y[i]) * output_derivative(node_signals[2])
+
+				#Deltas for hidden layer
+				sig_deriv_transform = np.array([ #Applies the derivative of the sigmoid function element-wise
+										[sig_derivative(node_signals[1][i])] 
+										for i in range(len(node_signals[1]))
+									])
+				__hidden_deltas = sig_deriv_transform * self.hidden_output_weights[1:] * __output_deltas
+
+				__hidden_deltas = __hidden_deltas / float(len(X))
+				__output_deltas = __output_deltas / float(len(X))
+				
+				#Update the gradient with deltas
+				gradient[0] = gradient[0] + np.outer(node_outputs[0].T[0], __hidden_deltas.T[0])
+				gradient[1] = gradient[1] + np.outer(node_outputs[1].T[0], __output_deltas)
+
+				self.input_hidden_weights = self.input_hidden_weights - self.learning_rate * gradient[0]
+				self.hidden_output_weights = self.hidden_output_weights - self.learning_rate * gradient[1]
+
+				if len(X) == 1:
+					print("Gradient: ")
+					print(gradient[0], gradient[1])
+					print("Weights: ")
+					print(self.input_hidden_weights)
+					print(self.hidden_output_weights)
 
 	def predict(self, X):
 		return np.sign(self.__feedforward(X, False))
@@ -160,6 +169,17 @@ def main():
 		D = np.array([[1.0,1.0,1.0]])
 		X = np.array(D[:,:2])
 		Y = np.array(D[:,2])
+		num_epochs = 1
+	else:
+		#LOAD IN DATASET
+		num_epochs = 2 * 10**6
+
+	size_in = len(X.T)
+
+	if '--hidden' in sys.argv:
+		size_hidden = int(sys.argv[sys.argv.index('--hidden') + 1])
+	else:
+		size_hidden = 2
 
 	if '--linear' in sys.argv:
 		output_fn = linear
@@ -172,11 +192,13 @@ def main():
 		update_method = 'backprop'
 
 	if '--eta' in sys.argv:
-		learning_rate = sys.argv[sys.argv.index('--eta') + 1]
+		learning_rate = float(sys.argv[sys.argv.index('--eta') + 1])
 	else:
 		eta = .0001
 
 	net = NeuralNet(
+				size_in=size_in,
+				size_hidden=size_hidden, 
 				learning_rate=eta, 
 				activation_fn=sigmoid,
 				output_fn=output_fn,
