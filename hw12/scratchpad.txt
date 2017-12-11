@@ -1,0 +1,8 @@
+linear w/ variable learning rate: E_test = .0472
+linear w/ variable learning rate and weight decay = .0483
+linear w/ early stopping E_cv =  .0400
+	No decision bound for it though because it always guesses they're not ones!
+	Test error of 13.66
+
+soft margin svm optimal c ~~ .5
+	test error = 0.0486
